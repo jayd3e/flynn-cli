@@ -32,7 +32,7 @@ func runHelp(cmd *Command, args []string) {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Unknown help topic: %q. Run 'hk help'.\n", args[0])
+	fmt.Fprintf(os.Stderr, "Unknown help topic: %q. Run 'flynn help'.\n", args[0])
 	os.Exit(2)
 }
 
