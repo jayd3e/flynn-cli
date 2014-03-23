@@ -8,14 +8,29 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/BurntSushi/toml"
 )
 
 var (
-	apiURL = "http://localhost:1200"
-	stdin  = bufio.NewReader(os.Stdin)
+	apiURL         = "http://localhost:1200"
+	stdin          = bufio.NewReader(os.Stdin)
+	configFilePath = os.Getenv("HOME") + "/.flynnrc"
 )
+
+type Config struct {
+	Servers []*server
+}
+
+type server struct {
+	GitHost   string
+	ApiUrl    string
+	ApiKey    string
+	ApiTlsPin string
+}
 
 type Command struct {
 	// args does not include the command name
@@ -74,29 +89,51 @@ var commands = []*Command{
 var (
 	flagApp  string
 	flagLong bool
+	config   Config
 )
 
 func main() {
-	if s := os.Getenv("FLYNN_API_URL"); s != "" {
-		apiURL = strings.TrimRight(s, "/")
-	}
 	log.SetFlags(0)
+
+	// Load our stored config.  Located at ~/.flynnrc
+	err := loadConfig()
+	if err != nil {
+		fmt.Errorf("failed to load config file", err)
+		os.Exit(2)
+	}
 
 	args := os.Args[1:]
 
+	// Determine the correct value of the app name specified by the flag
 	if len(args) >= 2 && "-a" == args[0] {
 		flagApp = args[1]
 		args = args[2:]
 
+		// If a remote was specified, resolve the app from the remote name
 		if gitRemoteApp, err := appFromGitRemote(flagApp); err == nil {
 			flagApp = gitRemoteApp
 		}
 	}
 
+	// Determine the url of the API
+	if s := os.Getenv("FLYNN_API_URL"); s != "" {
+		apiURL = strings.TrimRight(s, "/")
+	} else {
+		appName, _ := app()
+		for _, serv := range config.Servers {
+			appNameFromRemote, _ := appFromGitRemoteUrl(serv.GitHost)
+			if appName == appNameFromRemote {
+				apiURL = serv.ApiUrl
+			}
+		}
+	}
+
+	// Display usage information if a command isn't specified
 	if len(args) < 1 {
 		usage()
 	}
 
+	// Run the command
 	for _, cmd := range commands {
 		if cmd.Name() == args[0] && cmd.Run != nil {
 			cmd.Flag.Usage = func() {
@@ -112,6 +149,22 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
 	usage()
+}
+
+func loadConfig() error {
+	if _, err := toml.DecodeFile(configFilePath, &config); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeConfig() error {
+	w, _ := os.OpenFile(configFilePath, os.O_RDWR|os.O_CREATE, 0666)
+	encoder := toml.NewEncoder(w)
+	if err := encoder.Encode(config); err != nil {
+		return err
+	}
+	return nil
 }
 
 func app() (string, error) {
@@ -141,13 +194,21 @@ func appFromGitRemote(remote string) (string, error) {
 		return "", err
 	}
 
-	out := strings.Trim(string(b), "\r\n ")
+	app, _ := appFromGitRemoteUrl(string(b))
+	return app, nil
+}
 
-	if !strings.HasPrefix(out, gitURLPre) {
-		return "", fmt.Errorf("could not find app name in " + remote + " git remote")
+var appFromRemoteUrlRegex, _ = regexp.Compile(`(?:ssh://)?(?:\w+)@(?:\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}(?::\d+)?/|.+:)(.+)`)
+
+func appFromGitRemoteUrl(url string) (string, error) {
+	url = strings.Trim(url, "\r\n ")
+
+	match := appFromRemoteUrlRegex.FindStringSubmatch(url)
+	if match == nil {
+		return "", fmt.Errorf("could not find app name in " + url + " git remote")
 	}
 
-	return out[len(gitURLPre):], nil
+	return match[1], nil
 }
 
 func isNotFound(err error) bool {

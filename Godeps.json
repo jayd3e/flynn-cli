@@ -1,0 +1,11 @@
+{
+	"ImportPath": "github.com/flynn/flynn-cli",
+	"GoVersion": "go1.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/heroku/hk/term",
+			"Comment": "v20140314-7-g7b193cc",
+			"Rev": "7b193ccde22a103a6801b63df9de497867f32bc3"
+		}
+	]
+}
