@@ -79,6 +79,8 @@ func (c *Command) ShortExtra() string {
 // Running `flynn help` will list commands in this order.
 var commands = []*Command{
 	cmdHelp,
+	cmdLogin,
+	cmdCreate,
 	cmdRun,
 	cmdPs,
 	cmdLogs,
@@ -119,10 +121,9 @@ func main() {
 	if s := os.Getenv("FLYNN_API_URL"); s != "" {
 		apiURL = strings.TrimRight(s, "/")
 	} else {
-		appName, _ := app()
 		for _, serv := range config.Servers {
-			appNameFromRemote, _ := appFromGitRemoteUrl(serv.GitHost)
-			if appName == appNameFromRemote {
+			urlFromRemote, _ := urlFromGitRemote(serv.GitHost)
+			if urlFromRemote == serv.GitHost {
 				apiURL = serv.ApiUrl
 			}
 		}
@@ -185,6 +186,12 @@ func app() (string, error) {
 }
 
 func appFromGitRemote(remote string) (string, error) {
+	url, _ := urlFromGitRemote(remote)
+	app, _ := appFromGitRemoteUrl(url)
+	return app, nil
+}
+
+func urlFromGitRemote(remote string) (string, error) {
 	b, err := exec.Command("git", "config", "remote."+remote+".url").Output()
 	if err != nil {
 		if isNotFound(err) {
@@ -194,11 +201,14 @@ func appFromGitRemote(remote string) (string, error) {
 		return "", err
 	}
 
-	app, _ := appFromGitRemoteUrl(string(b))
-	return app, nil
+	return string(b), nil
 }
 
-var appFromRemoteUrlRegex, _ = regexp.Compile(`(?:ssh://)?(?:\w+)@(?:\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}(?::\d+)?/|.+:)(.+)`)
+func gitRemoteUrlFromApp(name string) (string, error) {
+	return "git@" + config.Servers[0].GitHost + ":" + name, nil
+}
+
+var appFromRemoteUrlRegex, _ = regexp.Compile(`(?:ssh://)?(?:\w+)@(?:localhost(?::\d+)?/|\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}(?::\d+)?/|.+:)(.+)`)
 
 func appFromGitRemoteUrl(url string) (string, error) {
 	url = strings.Trim(url, "\r\n ")

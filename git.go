@@ -33,3 +33,11 @@ func gitRemotes(url string) (names []string) {
 	}
 	return names
 }
+
+func addGitRemote(name string, url string) error {
+	_, err := exec.Command("git", "remote", "add", name, url).Output()
+	if err != nil {
+		return nil
+	}
+	return nil
+}
